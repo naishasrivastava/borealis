@@ -569,7 +569,7 @@ Stage.Particles=Stage.Effect.extend({
     this.ctx=ctx;var gl=ctx.gl;
     var C=P.cells;
     /* particle count scales with quality: 128→64k, 256→256k, 512→512k */
-    var PC=1024*(C===128?128:C===256?512:1024);
+    var PC=1024*(C===128?64:C===256?256:512);
     var CPD=Math.ceil(Math.sqrt(PC)),PER=CPD,PI2=Math.PI*2;
     this._PER=PER;this._CPD=CPD;this._PC=PC;this._PI2=PI2;
     var VERTS=[];for(var i=0,l=CPD*CPD;i<l;i++){VERTS.push(i%CPD/CPD,Math.floor(i/CPD)/CPD);}
