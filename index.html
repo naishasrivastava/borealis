@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <title>Borealis</title>
+  <link rel="icon" type="image/png" href="favicon.png">
+  <meta charset="utf-8"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@300;400;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 100%; height: 100%; background: #000; overflow: hidden; font-family: 'Syne', sans-serif; }
+    canvas#canvas { position: absolute; top: 0; left: 0; z-index: 0; cursor: crosshair; }
+    #glow-canvas { position: fixed; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:1; mix-blend-mode:screen; }
+
+    /* ── BUTTONS ── */
+    .fab {
+      position: fixed; z-index: 10;
+      width: 52px; height: 52px; border-radius: 50%;
+      border: 1px solid rgba(255,255,255,0.14);
+      background: rgba(8,9,22,0.75);
+      backdrop-filter: blur(14px);
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      transition: border-color 0.3s, transform 0.25s, box-shadow 0.3s;
+    }
+    .fab:hover { border-color: rgba(100,160,255,0.5); transform: scale(1.08); box-shadow: 0 0 22px rgba(80,140,255,0.22); }
+
+    #open-btn   { bottom: 28px; right: 28px; }
+    #open-btn svg { width: 22px; height: 22px; fill: none; stroke: rgba(190,215,255,0.85); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; transition: transform 0.55s cubic-bezier(0.77,0,0.18,1); }
+    #open-btn.active svg { transform: rotate(135deg); }
+
+    #pause-btn  { bottom: 28px; right: 92px; }
+    #pause-btn svg { fill: rgba(190,215,255,0.85); }
+
+    #save-btn   { bottom: 28px; right: 156px; }
+    #save-btn svg { width: 20px; height: 20px; fill: none; stroke: rgba(190,215,255,0.85); stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+
+    /* save flash */
+    #save-btn.flash { border-color: rgba(80,140,255,0.9); box-shadow: 0 0 22px rgba(60,120,255,0.45); }
+
+    /* ── HINT ── */
+    #hint {
+      position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
+      z-index: 5; pointer-events: none;
+      color: rgba(255,255,255,0.82);
+      font-family: 'Space Mono', monospace;
+      font-size: 12px; letter-spacing: 0.22em; text-transform: uppercase;
+      text-align: center; line-height: 2.6;
+      text-shadow: 0 0 30px rgba(100,160,255,0.5), 0 0 80px rgba(80,130,255,0.25);
+      transition: opacity 2s ease;
+    }
+    #hint .sub { font-size: 10px; opacity: 0.5; letter-spacing: 0.18em; }
+    #hint.hidden { opacity: 0; }
+
+    /* ── PANEL ── */
+    #panel {
+      position: fixed; top: 0; right: 0; z-index: 9;
+      width: 310px; height: 100vh;
+      background: rgba(4,5,14,0.9);
+      backdrop-filter: blur(28px) saturate(1.6);
+      border-left: 1px solid rgba(255,255,255,0.055);
+      display: flex; flex-direction: column;
+      transform: translateX(100%);
+      transition: transform 0.5s cubic-bezier(0.77,0,0.175,1);
+      overflow-y: auto; overflow-x: hidden;
+    }
+    #panel.open { transform: translateX(0); }
+    #panel::-webkit-scrollbar { width: 3px; }
+    #panel::-webkit-scrollbar-thumb { background: rgba(80,130,255,0.2); border-radius: 2px; }
+
+    .panel-header { padding: 38px 26px 28px; border-bottom: 1px solid rgba(255,255,255,0.05); flex-shrink: 0; }
+    .panel-eyebrow { font-family: 'Space Mono', monospace; font-size: 9.5px; letter-spacing: 0.24em; text-transform: uppercase; color: rgba(80,140,255,0.65); margin-bottom: 5px; }
+    .panel-title { font-size: 21px; font-weight: 700; color: rgba(255,255,255,0.92); letter-spacing: -0.02em; }
+
+    .panel-body { padding: 32px 26px 110px; display: flex; flex-direction: column; gap: 28px; }
+
+    .section-label { font-family: 'Space Mono', monospace; font-size: 9px; letter-spacing: 0.26em; text-transform: uppercase; color: rgba(255,255,255,0.22); margin-bottom: 13px; display: flex; align-items: center; gap: 10px; }
+    .section-label::after { content:''; flex:1; height:1px; background:rgba(255,255,255,0.055); }
+
+    .ctrl-row { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+    .ctrl-row:last-child { margin-bottom: 0; }
+    .ctrl-label-row { display: flex; justify-content: space-between; align-items: center; }
+    .ctrl-name { font-size: 13px; color: rgba(255,255,255,0.7); }
+    .ctrl-val { font-family: 'Space Mono', monospace; font-size: 10.5px; color: rgba(80,150,255,0.9); min-width: 44px; text-align: right; }
+
+    input[type=range] { -webkit-appearance:none; width:100%; height:2px; background:rgba(255,255,255,0.08); border-radius:2px; outline:none; cursor:pointer; }
+    input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:13px; height:13px; border-radius:50%; background:#fff; cursor:pointer; border:none; box-shadow:0 0 6px rgba(80,150,255,0.5); transition:box-shadow 0.2s, transform 0.2s; }
+    input[type=range]:hover::-webkit-slider-thumb { box-shadow:0 0 14px rgba(80,150,255,0.9); transform:scale(1.25); }
+    input[type=range]::-moz-range-thumb { width:13px; height:13px; border-radius:50%; background:#fff; border:none; box-shadow:0 0 6px rgba(80,150,255,0.5); cursor:pointer; }
+
+    .swatch-row { display: flex; gap: 7px; flex-wrap: wrap; }
+    .swatch { width: 28px; height: 28px; border-radius: 7px; cursor: pointer; border: 2px solid transparent; transition: border-color 0.2s, transform 0.18s, box-shadow 0.2s; }
+    .swatch:hover { transform: scale(1.15); }
+    .swatch.active { border-color: rgba(255,255,255,0.85); box-shadow: 0 0 10px rgba(255,255,255,0.18); }
+    .swatch-add {
+      width: 28px; height: 28px; border-radius: 7px; cursor: pointer;
+      border: 1.5px dashed rgba(255,255,255,0.2);
+      background: transparent;
+      display: flex; align-items: center; justify-content: center;
+      transition: border-color 0.2s, background 0.2s, transform 0.18s;
+      color: rgba(255,255,255,0.35); font-size: 18px; line-height: 1;
+      position: relative; flex-shrink: 0;
+    }
+    .swatch-add:hover { border-color: rgba(255,255,255,0.5); background: rgba(255,255,255,0.06); transform: scale(1.12); color: rgba(255,255,255,0.7); }
+    .swatch-add input[type=color] { position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer; border: none; padding: 0; }
+
+    .toggle-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .toggle-row:last-child { margin-bottom: 0; }
+    .toggle-name { font-size: 13px; color: rgba(255,255,255,0.7); }
+    .toggle { width: 36px; height: 19px; border-radius: 9.5px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.1); cursor: pointer; position: relative; transition: background 0.3s; flex-shrink:0; }
+    .toggle.on { background: rgba(60,120,255,0.55); border-color: rgba(60,120,255,0.3); }
+    .toggle::after { content:''; position:absolute; top:2px; left:2px; width:13px; height:13px; border-radius:50%; background:#fff; transition: left 0.24s cubic-bezier(0.35,0,0.25,1); }
+    .toggle.on::after { left:19px; }
+
+    .reset-btn { display:flex; align-items:center; justify-content:center; gap:7px; width:100%; padding:10px; border-radius:9px; border:1px solid rgba(255,255,255,0.08); background:rgba(255,255,255,0.025); color:rgba(255,255,255,0.4); font-family:'Space Mono',monospace; font-size:9.5px; letter-spacing:0.15em; text-transform:uppercase; cursor:pointer; transition:background 0.2s, color 0.2s, border-color 0.2s; }
+    .reset-btn:hover { background:rgba(255,255,255,0.06); color:rgba(255,255,255,0.8); border-color:rgba(255,255,255,0.16); }
+
+    /* quality pills */
+    .quality-row { display: flex; gap: 6px; }
+    .q-pill {
+      flex: 1; padding: 7px 0; border-radius: 7px; cursor: pointer; text-align: center;
+      font-family: 'Space Mono', monospace; font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase;
+      border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.04);
+      color: rgba(255,255,255,0.4);
+      transition: background 0.2s, border-color 0.2s, color 0.2s, box-shadow 0.2s;
+    }
+    .q-pill:hover { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.7); }
+    .q-pill.active { background: rgba(70,130,255,0.18); border-color: rgba(70,130,255,0.5); color: rgba(160,200,255,0.95); box-shadow: 0 0 10px rgba(60,120,255,0.15); }
+    .q-note { font-family: 'Space Mono', monospace; font-size: 8.5px; letter-spacing: 0.1em; color: rgba(255,255,255,0.22); margin-top: 8px; text-align: center; }
+
+    /* save toast */
+    #toast {
+      position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%) translateY(10px);
+      z-index: 20; pointer-events: none;
+      background: rgba(40,100,255,0.15);
+      border: 1px solid rgba(80,140,255,0.4);
+      backdrop-filter: blur(12px);
+      color: rgba(160,200,255,0.95);
+      font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase;
+      padding: 9px 18px; border-radius: 8px;
+      opacity: 0; transition: opacity 0.3s, transform 0.3s;
+    }
+    #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  </style>
+</head>
+<body>
+
+<canvas id="canvas"></canvas>
+<canvas id="glow-canvas"></canvas>
+<div id="toast">Image saved</div>
+
+<div id="hint">drag to sculpt the void<br><span class="sub">hold &amp; drag · space to pause</span></div>
+
+<!-- SAVE -->
+<button class="fab" id="save-btn" title="Save image">
+  <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+</button>
+
+<!-- PAUSE -->
+<button class="fab" id="pause-btn" title="Pause (Space)">
+  <svg id="pause-icon" width="18" height="18" viewBox="0 0 24 24" fill="rgba(190,215,255,0.85)"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+</button>
+
+<!-- SETTINGS -->
+<button class="fab" id="open-btn" title="Settings">
+  <svg viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="3"/>
+    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+  </svg>
+</button>
+
+<div id="panel">
+  <div class="panel-header">
+    <div class="panel-eyebrow">Configuration</div>
+    <div class="panel-title">Borealis</div>
+  </div>
+  <div class="panel-body">
+
+    <div>
+      <div class="section-label">Fluid</div>
+      <div class="ctrl-row">
+        <div class="ctrl-label-row"><span class="ctrl-name">Viscosity</span><span class="ctrl-val" id="val-viscosity">0.050</span></div>
+        <input type="range" id="sl-viscosity" min="0.001" max="0.25" step="0.001" value="0.05">
+      </div>
+      <div class="ctrl-row">
+        <div class="ctrl-label-row"><span class="ctrl-name">Pressure</span><span class="ctrl-val" id="val-pressure">0.15</span></div>
+        <input type="range" id="sl-pressure" min="0.01" max="0.5" step="0.01" value="0.15">
+      </div>
+      <div class="ctrl-row">
+        <div class="ctrl-label-row"><span class="ctrl-name">Diffusion</span><span class="ctrl-val" id="val-diffusion">0.9940</span></div>
+        <input type="range" id="sl-diffusion" min="0.96" max="0.9999" step="0.0001" value="0.994">
+      </div>
+      <div class="ctrl-row">
+        <div class="ctrl-label-row"><span class="ctrl-name">Force</span><span class="ctrl-val" id="val-force">100</span></div>
+        <input type="range" id="sl-force" min="10" max="400" step="1" value="100">
+      </div>
+      <div class="ctrl-row">
+        <div class="ctrl-label-row"><span class="ctrl-name">Speed</span><span class="ctrl-val" id="val-timestep">0.25</span></div>
+        <input type="range" id="sl-timestep" min="0.05" max="0.8" step="0.01" value="0.25">
+      </div>
+    </div>
+
+    <div>
+      <div class="section-label">Particles</div>
+      <div class="ctrl-row">
+        <div class="ctrl-label-row"><span class="ctrl-name">Size</span><span class="ctrl-val" id="val-psize">0.70</span></div>
+        <input type="range" id="sl-psize" min="0.1" max="1.0" step="0.05" value="0.7">
+      </div>
+      <div class="ctrl-row">
+        <div class="ctrl-label-row"><span class="ctrl-name">Lifetime</span><span class="ctrl-val" id="val-page">5.0</span></div>
+        <input type="range" id="sl-page" min="1" max="20" step="0.5" value="5">
+      </div>
+      <div class="ctrl-row">
+        <div class="ctrl-label-row"><span class="ctrl-name">Spawn Radius</span><span class="ctrl-val" id="val-pradius">0.025</span></div>
+        <input type="range" id="sl-pradius" min="0.005" max="0.15" step="0.005" value="0.025">
+      </div>
+      <div class="ctrl-row">
+        <div class="ctrl-label-row"><span class="ctrl-name">Fade Speed</span><span class="ctrl-val" id="val-pfade">0.010</span></div>
+        <input type="range" id="sl-pfade" min="0.002" max="0.05" step="0.001" value="0.01">
+      </div>
+    </div>
+
+    <div>
+      <div class="section-label">Fluid Color</div>
+      <div class="swatch-row" id="dye-swatches">
+        <div class="swatch"        data-dye="1.05,0.18,0.18,1.0" style="background:#e03030" title="Red"></div>
+        <div class="swatch"        data-dye="1.05,0.55,0.05,1.0" style="background:#d4820a" title="Orange"></div>
+        <div class="swatch"        data-dye="1.0,0.95,0.1,1.0"   style="background:#c8c010" title="Yellow"></div>
+        <div class="swatch active" data-dye="0.3,0.5,1.1,1.0"    style="background:#3a6ecc" title="Blue"></div>
+        <div class="swatch"        data-dye="0.2,1.0,0.4,1.0"    style="background:#18bb50" title="Green"></div>
+        <div class="swatch"        data-dye="0.82,0.88,0.95,1.0" style="background:#aec0d4" title="Silver"></div>
+        <div class="swatch-add" id="dye-add" title="Custom color">
+          <span>+</span>
+          <input type="color" id="dye-color-picker" value="#ff00ff">
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="section-label">Particle Color</div>
+      <div class="swatch-row" id="particle-swatches">
+        <div class="swatch"        data-pc="1.0,0.2,0.2,0.72"   style="background:#e03030" title="Red"></div>
+        <div class="swatch active" data-pc="1.0,0.5,0.166,0.66" style="background:#d4720a" title="Orange"></div>
+        <div class="swatch"        data-pc="1.0,0.9,0.18,0.8"   style="background:#c8c010" title="Yellow"></div>
+        <div class="swatch"        data-pc="0.35,0.7,1.0,0.72"  style="background:#3a70cc" title="Blue"></div>
+        <div class="swatch"        data-pc="0.28,1.0,0.48,0.72" style="background:#18cc50" title="Green"></div>
+        <div class="swatch"        data-pc="0.8,0.85,0.9,0.75"  style="background:#b0bcc8" title="Silver"></div>
+        <div class="swatch-add" id="pc-add" title="Custom color">
+          <span>+</span>
+          <input type="color" id="pc-color-picker" value="#ff00ff">
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="section-label">Visual</div>
+      <div class="toggle-row">
+        <span class="toggle-name">Glow Effect</span>
+        <div class="toggle on" id="tog-glow"></div>
+      </div>
+      <div class="ctrl-row" id="glow-row">
+        <div class="ctrl-label-row"><span class="ctrl-name">Glow Intensity</span><span class="ctrl-val" id="val-glow">0.5</span></div>
+        <input type="range" id="sl-glow" min="0.1" max="1.5" step="0.05" value="0.5">
+      </div>
+      <div style="margin-top:4px">
+        <div class="ctrl-label-row" style="margin-bottom:9px"><span class="ctrl-name">Simulation Quality</span></div>
+        <div class="quality-row">
+          <div class="q-pill" id="q-low"   data-cells="128">Low</div>
+          <div class="q-pill" id="q-med"   data-cells="256">Med</div>
+          <div class="q-pill active" id="q-high"  data-cells="512">High</div>
+        </div>
+        <div class="q-note" id="q-note">512 × 512 fluid grid</div>
+      </div>
+    </div>
+
+    <button class="reset-btn" id="reset-btn">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.99"/></svg>
+      Reset Defaults
+    </button>
+
+  </div>
+</div>
+
+<!-- ═══════════════ SHADERS ═══════════════ -->
+
+<!-- MOTION: original logic + uForce uniform -->
+<script type="application/x-glsl" id="fluid-motion">
+precision highp float;
+varying vec2 vUv;
+uniform sampler2D tSampler;
+uniform float ratio;
+uniform vec2 point;
+uniform float dye;
+uniform vec2 velocity;
+uniform float uForce;
+const float VELOCITY_RADIUS = 500.0;
+const float DYE_RADIUS = 2000.0;
+void main() {
+  gl_FragColor = texture2D(tSampler, vUv);
+  vec2 pos    = vUv * vec2(ratio, 1.0);
+  vec2 rPoint = point * vec2(ratio, 1.0);
+  float gaussian = -dot(pos - rPoint, pos - rPoint);
+  gl_FragColor.xy = velocity * exp(gaussian * VELOCITY_RADIUS) * uForce;
+  gl_FragColor.z  = dye * exp(gaussian * DYE_RADIUS);
+}
+</script>
+
+<!-- SOLVER: faithful to original — v and K are uniforms but default-match original consts -->
+<script type="application/x-glsl" id="fluid-solver">
+precision highp float;
+varying vec2 vUv;
+uniform sampler2D tSampler;
+uniform sampler2D motion;
+uniform float dt;
+uniform vec2 d;
+uniform float uViscosity;  /* default 0.05  */
+uniform float uPressure;   /* default 0.15  */
+vec2 dx = vec2(d.x, 0.0);
+vec2 dy = vec2(0.0, d.y);
+const float CentralScale = 0.5;
+vec2 Directions[4];
+bool IsBoundary(vec2 uv) {
+  return (uv.x <= d.x || uv.x > (1.0 - d.x) || uv.y <= d.y || uv.y > (1.0 - d.y));
+}
+vec3 bilerp(sampler2D t, vec2 pos) {
+  vec3 x  = texture2D(t, pos).xyz;
+  vec3 x0 = texture2D(t, pos - dx).xyz;
+  vec3 x1 = texture2D(t, pos + dx).xyz;
+  vec3 y0 = texture2D(t, pos - dy).xyz;
+  vec3 y1 = texture2D(t, pos + dy).xyz;
+  return (x + x0 + x1 + y0 + y1) * 0.2;
+}
+void main() {
+  Directions[0] = vec2(1.0, 0.0); Directions[1] = vec2(0.0,-1.0);
+  Directions[2] = vec2(-1.0,0.0); Directions[3] = vec2(0.0, 1.0);
+  vec4 FC = texture2D(tSampler, vUv);
+  vec3 FR = texture2D(tSampler, vUv + dx).xyz;
+  vec3 FL = texture2D(tSampler, vUv - dx).xyz;
+  vec3 FT = texture2D(tSampler, vUv + dy).xyz;
+  vec3 FD = texture2D(tSampler, vUv - dy).xyz;
+  vec2 Laplacian = FR.xy + FL.xy + FT.xy + FD.xy - 4.0 * FC.xy;
+  vec3 UdX = (FR - FL) * CentralScale;
+  vec3 UdY = (FT - FD) * CentralScale;
+  vec2 Viscosity = uViscosity * Laplacian;
+  vec2 DdX = vec2(UdX.z, UdY.z);
+  vec2 PdX  = (uPressure / dt) * DdX;
+  /* This clamp is what creates the persistent blue residue — do not change range */
+  vec3 Temp = vec3(DdX, UdX.x + UdY.y);
+  FC.z = clamp(FC.z - dt * dot(FC.xyz, Temp), 0.3, 1.7);
+  vec2 Was = vUv - dt * FC.xy * d;
+  FC.xy = bilerp(tSampler, Was).xy;
+  FC.xy += dt * (Viscosity - PdX + texture2D(motion, vUv).xy);
+  for (int i = 0; i < 4; i++) {
+    if (IsBoundary(vUv + (d * Directions[i])))
+      FC.xy *= 1.0 - abs(Directions[i]);
+  }
+  gl_FragColor = FC;
+}
+</script>
+
+<!-- DYE: original logic with uniform diffusion -->
+<script type="application/x-glsl" id="fluid-dye">
+precision highp float;
+varying vec2 vUv;
+uniform sampler2D tSampler;
+uniform sampler2D motion;
+uniform sampler2D solver;
+uniform float dt;
+uniform vec2 d;
+uniform float uDiffusion;  /* default 0.994 */
+const float acc = 2.0;
+void main() {
+  vec2 Was = vUv - dt * texture2D(solver, vUv).xy * d * acc;
+  gl_FragColor.xyz = texture2D(tSampler, Was).xyz * uDiffusion;
+  gl_FragColor.z  += texture2D(motion, vUv).z;
+  gl_FragColor.a   = 1.0;
+}
+</script>
+
+<!-- PARTICLE DATA -->
+<script type="application/x-glsl" id="fragment-particle-data">
+precision highp float;
+varying vec2 vUv;
+uniform sampler2D tSampler;
+uniform sampler2D solver;
+uniform float dt;
+uniform vec2 d;
+uniform float uFadeSpeed;
+void main() {
+  vec4 data = texture2D(tSampler, vUv);
+  data.xy += dt * texture2D(solver, data.xy).xy * d * 2.0;
+  if (data.a > 0.0) { data.a -= uFadeSpeed; } else { data = vec4(-1.0); }
+  gl_FragColor = data;
+}
+</script>
+
+<!-- PARTICLES VERTEX -->
+<script type="application/x-glsl" id="vertex-particles">
+precision highp float;
+attribute vec2 position;
+varying vec2 vUv;
+uniform sampler2D particleData;
+uniform float ratio;
+uniform float uParticleSize;
+void main() {
+  vec4 data = texture2D(particleData, position);
+  vUv = position;
+  vec2 vPos = data.xy * 2.0 - 1.0;
+  gl_PointSize = data.z * uParticleSize * ratio;
+  gl_Position  = vec4(vPos.x, vPos.y, 0.0, 1.0);
+}
+</script>
+
+<!-- PARTICLES FRAGMENT -->
+<script type="application/x-glsl" id="fragment-particles">
+precision highp float;
+uniform vec4 uParticleColor;
+void main() { gl_FragColor = uParticleColor; }
+</script>
+
+<!-- VISUALIZER: original formula — dye scalar * color vec4 + particles -->
+<script type="application/x-glsl" id="fluid-visualizer">
+precision highp float;
+varying vec2 vUv;
+uniform sampler2D sampler;
+uniform sampler2D particles;
+uniform vec4 uDyeColor;   /* vec4 so alpha carries through */
+void main() {
+  float dye = texture2D(sampler, vUv).z;
+  vec4  p   = texture2D(particles, vUv);
+  gl_FragColor = dye * uDyeColor + p;
+}
+</script>
+
+<!-- ═══════════════ LIBRARIES ═══════════════ -->
+<script>
+/* RTT.gl – minimal faithful port */
+;(function(G){
+'use strict';
+var U={};
+U.prog=function(gl,vs,fs){var p=gl.createProgram(),v,f;try{v=U.sh(gl,vs,gl.VERTEX_SHADER);f=U.sh(gl,fs,gl.FRAGMENT_SHADER);}catch(e){gl.deleteProgram(p);throw e;}gl.attachShader(p,v);gl.deleteShader(v);gl.attachShader(p,f);gl.deleteShader(f);gl.linkProgram(p);return p;};
+U.sh=function(gl,src,t){var s=gl.createShader(t);gl.shaderSource(s,src);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw'GLSL:'+gl.getShaderInfoLog(s);return s;};
+U.tex=function(gl,w,h,opt){var t=gl.createTexture(),type=opt&&opt.type||gl.UNSIGNED_BYTE,min=opt&&opt.minFilter||gl.NEAREST,mag=opt&&opt.magFilter||gl.NEAREST;gl.bindTexture(gl.TEXTURE_2D,t);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,w,h,0,gl.RGBA,type,null);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,mag);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,min);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);gl.bindTexture(gl.TEXTURE_2D,null);return t;};
+var DVS='attribute vec2 position;varying vec2 vUv;void main(){vUv=position;vec2 p=position*2.0-1.0;gl_Position=vec4(p,0,1);}';
+var DFS='precision highp float;uniform sampler2D tSampler;varying vec2 vUv;void main(){gl_FragColor=texture2D(tSampler,vUv);}';
+var QUAD=new Float32Array([-1,-1,1,-1,-1,1,1,-1,1,1,-1,1]);
+function applyU(gl,sh,fn,loc,val,tex){var ul=gl.getUniformLocation(sh,loc);if(!ul||val===null||val===undefined)return;if(!tex){var a=[ul];if(val&&val.length)a=a.concat(Array.from(val));else a.push(val);fn.apply(gl,a);}else{fn.call(gl,ul,val);if(tex.length){for(var i=0;i<tex.length;i++){gl.activeTexture(gl.TEXTURE0+val[i]);gl.bindTexture(gl.TEXTURE_2D,tex[i]);}}else{gl.activeTexture(gl.TEXTURE0+val);gl.bindTexture(gl.TEXTURE_2D,tex);}}}
+function applyA(gl,sh,loc,sz,buf,data){var al=gl.getAttribLocation(sh,loc);if(al<0)return;gl.bindBuffer(gl.ARRAY_BUFFER,buf);gl.bufferData(gl.ARRAY_BUFFER,data,gl.STATIC_DRAW);gl.enableVertexAttribArray(al);gl.vertexAttribPointer(al,sz,gl.FLOAT,false,0,0);}
+var RTT=function(gl,opt){this.gl=gl;this.opt=opt||{};this.W=opt&&opt.width||gl.canvas.width;this.H=opt&&opt.height||gl.canvas.height;this.vW=opt&&opt.vW||gl.canvas.width;this.vH=opt&&opt.vH||gl.canvas.height;this.output=null;this.ri=0;this.sh=[];this.un=[];
+this.fb=gl.createFramebuffer();
+this.tx=[U.tex(gl,this.W,this.H,opt&&opt.texture),U.tex(gl,this.W,this.H,opt&&opt.texture)];
+this.qb=gl.createBuffer();this.qv=new Float32Array(QUAD);this.ps=U.prog(gl,DVS,DFS);
+this.gb=this.qb;this.gv=this.qv;
+if(opt&&opt.geometry){this.gb=gl.createBuffer();this.gv=opt.geometry.shift();this.geo=opt.geometry;}else{this.geo=[gl.TRIANGLE_STRIP,0,6];}};
+RTT.prototype.resize=function(){var gl=this.gl,t=this.opt.texture&&this.opt.texture.type||gl.UNSIGNED_BYTE;this.W=gl.canvas.width;this.H=gl.canvas.height;this.vW=gl.canvas.width;this.vH=gl.canvas.height;for(var i=0;i<this.tx.length;i++){gl.bindTexture(gl.TEXTURE_2D,this.tx[i]);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,this.W,this.H,0,gl.RGBA,t,null);}return this;};
+RTT.prototype.fragment=function(fs,u){var s=U.prog(this.gl,DVS,fs);this.sh.push(s);this.un.push(u);return this;};
+RTT.prototype.vertexFragment=function(vs,fs,u){var s=U.prog(this.gl,vs,fs);this.sh.push(s);this.un.push(u);return this;};
+RTT.prototype.render=function(){var gl=this.gl,tu;for(var i=0;i<this.sh.length;i++){tu=0;this.ri=(this.ri+1)%2;var inp=this.output;this.output=this.tx[this.ri];gl.useProgram(this.sh[i]);gl.bindFramebuffer(gl.FRAMEBUFFER,this.fb);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,this.output,0);applyA(gl,this.sh[i],'position',2,this.gb,this.gv);applyU(gl,this.sh[i],gl.uniform1i,'tSampler',tu,inp);tu++;var us=this.un[i]||{};for(var u in us){var uu=us[u];if(uu.type==='t'){applyU(gl,this.sh[i],gl.uniform1i,u,tu,uu.value);tu++;}else{applyU(gl,this.sh[i],gl['uniform'+uu.type],u,uu.value);}}gl.viewport(0,0,this.W,this.H);gl.drawArrays.apply(gl,this.geo);}return this;};
+RTT.prototype.clear=function(){if(!this.output)return this;var gl=this.gl;gl.bindFramebuffer(gl.FRAMEBUFFER,this.fb);gl.clear(gl.COLOR_BUFFER_BIT);return this;};
+RTT.prototype.paint=function(){if(!this.output)return this;var gl=this.gl;gl.useProgram(this.ps);gl.bindFramebuffer(gl.FRAMEBUFFER,null);applyA(gl,this.ps,'position',2,this.qb,this.qv);applyU(gl,this.ps,gl.uniform1i,'tSampler',0,this.output);gl.viewport(0,0,this.vW,this.vH);gl.drawArrays(gl.TRIANGLE_STRIP,0,6);return this;};
+G.RTT=RTT;
+})(window);
+</script>
+
+<script>
+/* Stage.gl */
+;(function(G){
+'use strict';
+var Stage={};
+var ext=function(o,s){for(var k in s)if(s.hasOwnProperty(k))o[k]=s[k];return o;};
+Stage.Effect=function(){};
+Stage.Effect.extend=function(src){var e=function(){};ext(e.prototype,Stage.Effect.prototype);ext(e.prototype,src);return e;};
+Stage.Effect.prototype={index:0,initialize:function(){},update:function(){},resize:function(){}};
+Stage.Renderer=function(canvas){this.canvas=canvas;var gl=canvas.getContext('webgl',{preserveDrawingBuffer:true,antialias:true})||canvas.getContext('experimental-webgl',{preserveDrawingBuffer:true,antialias:true});if(!gl)throw'No WebGL';this.gl=gl;this.effects=[];this.names={};this.paused=false;var dpr=window.devicePixelRatio||1;this.ctx={gl:gl,width:canvas.width,height:canvas.height,effects:this.names,paused:false};this.ctx.aspect=window.innerWidth/window.innerHeight;window.addEventListener('resize',this.resize.bind(this));};
+Stage.Renderer.prototype.effect=function(e){this.effects.push(e);if(e.name)this.names[e.name]=e;return this;};
+Stage.Renderer.prototype.render=function(){this.effects.sort(function(a,b){return a.index-b.index;});for(var i=0;i<this.effects.length;i++)this.effects[i].initialize(this.ctx);_rl(this);return this;};
+function _rl(r){function go(){if(!r.paused)requestAnimationFrame(go);for(var i=0;i<r.effects.length;i++)r.effects[i].update(r.ctx);}go();}
+Stage.Renderer.prototype.pause=function(){this.paused=!this.paused;this.ctx.paused=this.paused;if(!this.paused)_rl(this);return this;};
+Stage.Renderer.prototype.resize=function(){var dpr=window.devicePixelRatio||1;this.ctx.width=this.canvas.width;this.ctx.height=this.canvas.height;this.ctx.aspect=window.innerWidth/window.innerHeight;for(var i=0;i<this.effects.length;i++)this.effects[i].resize(this.ctx);return this;};
+G.Stage=Stage;
+})(window);
+</script>
+
+<!-- ═══════════════ SHARED PARAMS ═══════════════ -->
+<script>
+window.P = {
+  viscosity : 0.05,
+  pressure  : 0.15,
+  diffusion : 0.994,
+  force     : 100,
+  timestep  : 0.25,
+  particleSize   : 0.7,
+  particleAge    : 5,
+  particleRadius : 0.025,
+  particleFade   : 0.01,
+  dyeColor       : [0.3, 0.5, 1.1, 1.0],
+  particleColor  : [1.0, 0.5, 0.166, 0.66],
+  glowOn         : true,
+  glowIntensity  : 0.5,
+  cells          : 512
+};
+</script>
+
+<!-- ═══════════════ EFFECTS ═══════════════ -->
+<script>
+/* Motion */
+(function(){
+Stage.Motion=Stage.Effect.extend({
+  name:'motion',
+  initialize:function(ctx){
+    this.ctx=ctx;var gl=ctx.gl;
+    var C=P.cells;
+    this.u={point:{type:'2f',value:null},lastPoint:{type:'2f',value:null},dye:{type:'1f',value:0},velocity:{type:'2f',value:[0,0]},ratio:{type:'1f',value:ctx.aspect},uForce:{type:'1f',value:P.force}};
+    this.motion=new RTT(gl,{width:C,height:C,texture:{type:gl.FLOAT}}).fragment(document.getElementById('fluid-motion').textContent,this.u).render();
+    var s=this;
+    document.addEventListener('mouseup',function(){s.addDye=false;});
+    document.addEventListener('mousedown',function(e){if('buttons'in e?e.buttons===1:e.which||e.button)s.addDye=true;});
+    document.getElementById('canvas').addEventListener('mousemove',this.mm.bind(this));
+  },
+  update:function(ctx){this.ctx=ctx;this.u.uForce.value=P.force;this.motion.render();this.u.velocity.value=[0,0];this.u.dye.value=0;},
+  resize:function(ctx){this.ctx=ctx;this.u.ratio.value=ctx.aspect;},
+  mm:function(e){
+    if(this.ctx.paused)return;
+    this.ox=this.ox||0;this.oy=this.oy||0;
+    var C=P.cells;
+    var dpr=window.devicePixelRatio||1;
+    var cssW=this.ctx.width/dpr, cssH=this.ctx.height/dpr;
+    var mx=e.offsetX,my=e.offsetY;
+    var i=((mx/cssW)*C)|0,j=((my/cssH)*C)|0;
+    this.u.lastPoint.value=this.u.point.value?this.u.point.value:[i/C,1-j/C];
+    this.u.point.value=[i/C,1-j/C];
+    this.u.velocity.value=[(mx-this.ox)/cssW,-(my-this.oy)/cssH];
+    if(this.addDye)this.u.dye.value=1;
+    this.ox=mx;this.oy=my;
+  }
+});
+})();
+</script>
+
+<script>
+/* Fluid */
+(function(){
+Stage.Fluid=Stage.Effect.extend({
+  name:'fluid',
+  initialize:function(ctx){
+    this.ctx=ctx;var gl=ctx.gl;
+    var C=P.cells;
+    this.su={d:{type:'2f',value:[1/C,1/C]},dt:{type:'1f',value:P.timestep},motion:{type:'t',value:ctx.effects.motion.motion.output},uViscosity:{type:'1f',value:P.viscosity},uPressure:{type:'1f',value:P.pressure}};
+    this.solver=new RTT(gl,{width:C,height:C,texture:{type:gl.FLOAT}}).fragment(document.getElementById('fluid-solver').textContent,this.su).render();
+    this.du={d:{type:'2f',value:[1/C,1/C]},dt:{type:'1f',value:P.timestep},motion:{type:'t',value:ctx.effects.motion.motion.output},solver:{type:'t',value:this.solver.output},uDiffusion:{type:'1f',value:P.diffusion}};
+    this.dye=new RTT(gl,{width:C,height:C,texture:{type:gl.FLOAT,minFilter:gl.LINEAR,magFilter:gl.LINEAR}}).fragment(document.getElementById('fluid-dye').textContent,this.du).render();
+  },
+  update:function(ctx){
+    var mo=ctx.effects.motion.motion.output;
+    this.su.motion.value=mo;this.su.dt.value=P.timestep;this.su.uViscosity.value=P.viscosity;this.su.uPressure.value=P.pressure;
+    this.solver.render();
+    this.du.motion.value=mo;this.du.solver.value=this.solver.output;this.du.dt.value=P.timestep;this.du.uDiffusion.value=P.diffusion;
+    this.dye.render();
+  }
+});
+})();
+</script>
+
+<script>
+/* Particles */
+(function(){
+Stage.Particles=Stage.Effect.extend({
+  name:'particles',
+  initialize:function(ctx){
+    this.ctx=ctx;var gl=ctx.gl;
+    var C=P.cells;
+    /* particle count scales with quality: 128→64k, 256→256k, 512→512k */
+    var PC=1024*(C===128?64:C===256?256:512);
+    var CPD=Math.ceil(Math.sqrt(PC)),PER=CPD,PI2=Math.PI*2;
+    this._PER=PER;this._CPD=CPD;this._PC=PC;this._PI2=PI2;
+    var VERTS=[];for(var i=0,l=CPD*CPD;i<l;i++){VERTS.push(i%CPD/CPD,Math.floor(i/CPD)/CPD);}
+    this.du={d:{type:'2f',value:[1/C,1/C]},dt:{type:'1f',value:P.timestep},solver:{type:'t',value:ctx.effects.fluid.solver.output},uFadeSpeed:{type:'1f',value:P.particleFade}};
+    this.data=new RTT(gl,{width:CPD,height:CPD,texture:{type:gl.FLOAT}}).fragment(document.getElementById('fragment-particle-data').textContent,this.du).render();
+    var dpr=window.devicePixelRatio||1;
+    this.pu={ratio:{type:'1f',value:ctx.aspect*dpr},particleData:{type:'t',value:this.data.output},uParticleSize:{type:'1f',value:P.particleSize},uParticleColor:{type:'4f',value:P.particleColor}};
+    this.particles=new RTT(gl,{texture:{type:gl.FLOAT},geometry:[new Float32Array(VERTS),gl.POINTS,0,VERTS.length/2]}).vertexFragment(document.getElementById('vertex-particles').textContent,document.getElementById('fragment-particles').textContent,this.pu).render();
+    this.buf=[];this.bi=0;
+    var onMM=this.mm.bind(this);
+    document.addEventListener('mouseup',function(){document.removeEventListener('mousemove',onMM);});
+    document.addEventListener('mousedown',function(e){if('buttons'in e?e.buttons===1:e.which||e.button)document.addEventListener('mousemove',onMM);});
+  },
+  update:function(ctx){
+    this.ctx=ctx;var gl=ctx.gl;
+    var dpr=window.devicePixelRatio||1;
+    this.du.uFadeSpeed.value=P.particleFade;this.du.dt.value=P.timestep;
+    this.pu.uParticleSize.value=P.particleSize;
+    this.pu.ratio.value=ctx.aspect*dpr;
+    this.pu.uParticleColor.value=P.particleColor;
+    this.data.render();
+    gl.enable(gl.BLEND);this.particles.clear().render();gl.disable(gl.BLEND);
+  },
+  resize:function(ctx){this.ctx=ctx;this.particles.resize();},
+  mm:function(e){
+    if(this.ctx.paused)return;
+    if(e.target!==document.getElementById('canvas'))return;
+    var gl=this.ctx.gl;
+    var dpr=window.devicePixelRatio||1;
+    var cssW=this.ctx.width/dpr, cssH=this.ctx.height/dpr;
+    var pi=e.offsetX/cssW, pj=1-e.offsetY/cssH;
+    var CPD=this._CPD,PER=this._PER,PC=this._PC,PI2=this._PI2;
+    var x=~~(this.bi%CPD),y=~~(this.bi/CPD);
+    gl.bindTexture(gl.TEXTURE_2D,this.data.output);
+    for(var p=0;p<PER;p++){var a=Math.random()*PI2;this.buf.push(pi+Math.cos(a)*Math.random()*P.particleRadius,pj+Math.sin(a)*Math.random()*P.particleRadius*this.ctx.aspect,P.particleSize,Math.random()*P.particleAge);}
+    gl.texSubImage2D(gl.TEXTURE_2D,0,x,y,PER,1,gl.RGBA,gl.FLOAT,new Float32Array(this.buf));
+    this.buf=[];this.bi=(this.bi+PER)%PC;
+  }
+});
+})();
+</script>
+
+<script>
+/* Visualizer — uses vec4 dyeColor exactly like original */
+(function(){
+Stage.Visualizer=Stage.Effect.extend({
+  name:'visualizer',
+  initialize:function(ctx){
+    this.ctx=ctx;var gl=ctx.gl;
+    this.u={sampler:{type:'t',value:ctx.effects.fluid.dye.output},particles:{type:'t',value:ctx.effects.particles.particles.output},uDyeColor:{type:'4f',value:P.dyeColor}};
+    this.vis=new RTT(gl,{texture:{minFilter:gl.LINEAR,magFilter:gl.LINEAR}}).fragment(document.getElementById('fluid-visualizer').textContent,this.u).render();
+  },
+  update:function(ctx){
+    var gl=ctx.gl;
+    this.u.particles.value=ctx.effects.particles.particles.output;
+    this.u.uDyeColor.value=P.dyeColor;
+    gl.enable(gl.BLEND);this.vis.clear().render();gl.disable(gl.BLEND);
+    this.vis.paint();
+  },
+  resize:function(ctx){this.ctx=ctx;this.vis.resize();}
+});
+})();
+</script>
+
+<!-- ═══════════════ GLOW ═══════════════ -->
+<script>
+var glowCtx=document.getElementById('glow-canvas').getContext('2d');
+var glowF=0;
+function resizeGlow(){
+  var gc=document.getElementById('glow-canvas');
+  var dpr=window.devicePixelRatio||1;
+  gc.width=window.innerWidth*dpr;
+  gc.height=window.innerHeight*dpr;
+  gc.style.width=window.innerWidth+'px';
+  gc.style.height=window.innerHeight+'px';
+}
+resizeGlow();
+window.addEventListener('resize',resizeGlow);
+(function glowLoop(){
+  requestAnimationFrame(glowLoop);
+  if(!P.glowOn){glowCtx.clearRect(0,0,glowCtx.canvas.width,glowCtx.canvas.height);return;}
+  if(++glowF%2!==0)return;
+  var gc=glowCtx.canvas;
+  glowCtx.clearRect(0,0,gc.width,gc.height);
+  glowCtx.save();
+  var blur=Math.round(28*P.glowIntensity);
+  glowCtx.filter='blur('+blur+'px) brightness(1.7)';
+  glowCtx.globalAlpha=0.65*P.glowIntensity;
+  try{glowCtx.drawImage(document.getElementById('canvas'),0,0,gc.width,gc.height);}catch(e){}
+  glowCtx.restore();
+})();
+</script>
+
+<!-- ═══════════════ MAIN + UI ═══════════════ -->
+<script>
+(function(){
+  var canvas=document.getElementById('canvas');
+  var dpr=window.devicePixelRatio||1;
+  function resize(){
+    dpr=window.devicePixelRatio||1;
+    canvas.width=window.innerWidth*dpr;
+    canvas.height=window.innerHeight*dpr;
+    canvas.style.width=window.innerWidth+'px';
+    canvas.style.height=window.innerHeight+'px';
+  }
+  resize();
+  window.addEventListener('resize',resize);
+
+  var renderer,gl,ok=true;
+  try{renderer=new Stage.Renderer(canvas);gl=renderer.ctx.gl;}catch(e){ok=false;}
+  // Use renderer.ctx not renderer.context
+  ok=ok&&gl&&gl.getExtension('OES_texture_float')&&gl.getExtension('OES_texture_float_linear');
+  if(!ok){alert('WebGL with float textures required.');return;}
+
+  gl.blendFunc(gl.SRC_ALPHA,gl.ONE);
+  gl.clearColor(0,0,0,1);
+
+  renderer
+    .effect(new Stage.Motion())
+    .effect(new Stage.Fluid())
+    .effect(new Stage.Particles())
+    .effect(new Stage.Visualizer())
+    .render();
+
+  /* ── PAUSE ── */
+  var pauseBtn=document.getElementById('pause-btn');
+  var pauseIcon=document.getElementById('pause-icon');
+  function updatePauseIcon(){
+    pauseIcon.innerHTML=renderer.paused
+      ?'<polygon points="5,3 19,12 5,21" fill="rgba(190,215,255,0.85)"/>'
+      :'<rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>';
+  }
+  pauseBtn.addEventListener('click',function(){renderer.pause();updatePauseIcon();});
+  document.addEventListener('keydown',function(e){
+    if(e.keyCode===32){
+      e.preventDefault();
+      renderer.pause();
+      updatePauseIcon();
+    }
+  });
+
+  /* ── SAVE ── */
+  var toast=document.getElementById('toast');
+  var saveBtn=document.getElementById('save-btn');
+  saveBtn.addEventListener('click',function(){
+    /* Compose: WebGL canvas + glow overlay onto a temp canvas */
+    var w=canvas.width,h=canvas.height;
+    var tmp=document.createElement('canvas');
+    tmp.width=w;tmp.height=h;
+    var tc=tmp.getContext('2d');
+    /* draw black background */
+    tc.fillStyle='#000';tc.fillRect(0,0,w,h);
+    /* draw WebGL frame */
+    tc.drawImage(canvas,0,0);
+    /* draw glow layer with screen blend */
+    tc.save();tc.globalCompositeOperation='screen';
+    tc.drawImage(document.getElementById('glow-canvas'),0,0,w,h);
+    tc.restore();
+    /* download */
+    var link=document.createElement('a');
+    link.download='borealis-'+Date.now()+'.png';
+    link.href=tmp.toDataURL('image/png');
+    link.click();
+    /* flash feedback */
+    saveBtn.classList.add('flash');
+    toast.classList.add('show');
+    setTimeout(function(){saveBtn.classList.remove('flash');toast.classList.remove('show');},1800);
+  });
+
+  /* ── PANEL ── */
+  var openBtn=document.getElementById('open-btn'),panel=document.getElementById('panel');
+  openBtn.addEventListener('click',function(){panel.classList.toggle('open');openBtn.classList.toggle('active');});
+  document.addEventListener('mousedown',function(e){
+    if(panel.classList.contains('open')&&!panel.contains(e.target)&&!openBtn.contains(e.target))
+    {panel.classList.remove('open');openBtn.classList.remove('active');}
+  });
+
+  /* ── HINT ── */
+  document.addEventListener('mousedown',function(){document.getElementById('hint').classList.add('hidden');},{once:true});
+
+  /* ── SLIDERS ── */
+  function bind(slId,valId,key,fmt){
+    var sl=document.getElementById(slId),vl=document.getElementById(valId);
+    sl.addEventListener('input',function(){var v=parseFloat(sl.value);P[key]=v;vl.textContent=fmt(v);});
+  }
+  bind('sl-viscosity','val-viscosity','viscosity',function(v){return v.toFixed(3);});
+  bind('sl-pressure','val-pressure','pressure',function(v){return v.toFixed(2);});
+  bind('sl-diffusion','val-diffusion','diffusion',function(v){return v.toFixed(4);});
+  bind('sl-force','val-force','force',function(v){return Math.round(v);});
+  bind('sl-timestep','val-timestep','timestep',function(v){return v.toFixed(2);});
+  bind('sl-psize','val-psize','particleSize',function(v){return v.toFixed(2);});
+  bind('sl-page','val-page','particleAge',function(v){return v.toFixed(1);});
+  bind('sl-pradius','val-pradius','particleRadius',function(v){return v.toFixed(3);});
+  bind('sl-pfade','val-pfade','particleFade',function(v){return v.toFixed(3);});
+  bind('sl-glow','val-glow','glowIntensity',function(v){return v.toFixed(1);});
+
+  /* ── SWATCH HELPER ── */
+  function hexToVec(hex, alpha) {
+    var r=parseInt(hex.slice(1,3),16)/255;
+    var g=parseInt(hex.slice(3,5),16)/255;
+    var b=parseInt(hex.slice(5,7),16)/255;
+    return alpha!==undefined?[r,g,b,alpha]:[r,g,b];
+  }
+  function bindSwatches(rowId, pickerId, applyFn) {
+    var row=document.getElementById(rowId);
+    var picker=document.getElementById(pickerId);
+    function activateSwatch(sw) {
+      row.querySelectorAll('.swatch').forEach(function(s){s.classList.remove('active');});
+      sw.classList.add('active');
+    }
+    /* existing static swatches */
+    row.querySelectorAll('.swatch').forEach(function(sw){
+      sw.addEventListener('click',function(){
+        activateSwatch(sw);
+        var raw=sw.getAttribute('data-dye')||sw.getAttribute('data-pc');
+        applyFn(raw.split(',').map(Number));
+      });
+    });
+    /* + color picker — insert new custom swatch before the + button */
+    var addBtn=row.querySelector('.swatch-add');
+    picker.addEventListener('input',function(){/* live preview */
+      var vals=hexToVec(picker.value,applyFn===applyDye?1.0:0.72);
+      applyFn(vals);
+    });
+    picker.addEventListener('change',function(){
+      var hex=picker.value;
+      var alpha=applyFn===applyDye?1.0:0.72;
+      var vals=hexToVec(hex,alpha);
+      /* create persistent swatch */
+      var sw=document.createElement('div');
+      sw.className='swatch';
+      var attr=applyFn===applyDye?'data-dye':'data-pc';
+      sw.setAttribute(attr,vals.join(','));
+      sw.style.background=hex;
+      sw.title='Custom';
+      row.insertBefore(sw,addBtn);
+      sw.addEventListener('click',function(){
+        activateSwatch(sw);
+        applyFn(vals);
+      });
+      activateSwatch(sw);
+      applyFn(vals);
+    });
+  }
+  function applyDye(vals){P.dyeColor=vals.length===4?vals:[vals[0],vals[1],vals[2],1.0];}
+  function applyPc(vals){P.particleColor=vals;}
+
+  bindSwatches('dye-swatches','dye-color-picker',applyDye);
+  bindSwatches('particle-swatches','pc-color-picker',applyPc);
+
+  /* ── GLOW TOGGLE ── */
+  var togGlow=document.getElementById('tog-glow'),glowRow=document.getElementById('glow-row');
+  togGlow.addEventListener('click',function(){
+    togGlow.classList.toggle('on');
+    P.glowOn=togGlow.classList.contains('on');
+    glowRow.style.opacity=P.glowOn?'1':'0.35';
+  });
+
+  /* ── QUALITY PILLS ── */
+  var qNote=document.getElementById('q-note');
+  var qLabels={128:'128 × 128 fluid grid · fast',256:'256 × 256 fluid grid · balanced',512:'512 × 512 fluid grid · best'};
+  function setQuality(cells){
+    P.cells=cells;
+    document.querySelectorAll('.q-pill').forEach(function(p){
+      p.classList.toggle('active',parseInt(p.getAttribute('data-cells'))===cells);
+    });
+    qNote.textContent=qLabels[cells];
+    /* reinitialise renderer with new cell count */
+    var wasPaused=renderer.paused;
+    if(!wasPaused)renderer.pause();
+    /* re-create effects on existing GL context */
+    renderer.effects=[];renderer.names={};
+    renderer.ctx.effects=renderer.names;
+    gl.blendFunc(gl.SRC_ALPHA,gl.ONE);
+    gl.clearColor(0,0,0,1);
+    renderer
+      .effect(new Stage.Motion())
+      .effect(new Stage.Fluid())
+      .effect(new Stage.Particles())
+      .effect(new Stage.Visualizer());
+    renderer.effects.sort(function(a,b){return a.index-b.index;});
+    for(var i=0;i<renderer.effects.length;i++)renderer.effects[i].initialize(renderer.ctx);
+    if(!wasPaused){renderer.paused=false;renderer.ctx.paused=false;_startLoop(renderer);}
+  }
+  function _startLoop(r){
+    function go(){if(!r.paused)requestAnimationFrame(go);for(var i=0;i<r.effects.length;i++)r.effects[i].update(r.ctx);}go();
+  }
+  document.querySelectorAll('.q-pill').forEach(function(pill){
+    pill.addEventListener('click',function(){
+      var c=parseInt(pill.getAttribute('data-cells'));
+      if(c!==P.cells)setQuality(c);
+    });
+  });
+
+  /* ── RESET ── */
+  var DEFS={viscosity:0.05,pressure:0.15,diffusion:0.994,force:100,timestep:0.25,particleSize:0.7,particleAge:5,particleRadius:0.025,particleFade:0.01,dyeColor:[0.3,0.5,1.1,1.0],particleColor:[1.0,0.5,0.166,0.66],glowOn:true,glowIntensity:0.5};
+  document.getElementById('reset-btn').addEventListener('click',function(){
+    Object.assign(P,JSON.parse(JSON.stringify(DEFS)));
+    [['sl-viscosity','val-viscosity',DEFS.viscosity,function(v){return v.toFixed(3);}],
+     ['sl-pressure','val-pressure',DEFS.pressure,function(v){return v.toFixed(2);}],
+     ['sl-diffusion','val-diffusion',DEFS.diffusion,function(v){return v.toFixed(4);}],
+     ['sl-force','val-force',DEFS.force,function(v){return Math.round(v);}],
+     ['sl-timestep','val-timestep',DEFS.timestep,function(v){return v.toFixed(2);}],
+     ['sl-psize','val-psize',DEFS.particleSize,function(v){return v.toFixed(2);}],
+     ['sl-page','val-page',DEFS.particleAge,function(v){return v.toFixed(1);}],
+     ['sl-pradius','val-pradius',DEFS.particleRadius,function(v){return v.toFixed(3);}],
+     ['sl-pfade','val-pfade',DEFS.particleFade,function(v){return v.toFixed(3);}],
+     ['sl-glow','val-glow',DEFS.glowIntensity,function(v){return v.toFixed(1);}]
+    ].forEach(function(s){document.getElementById(s[0]).value=s[2];document.getElementById(s[1]).textContent=s[3](s[2]);});
+    togGlow.classList.add('on');glowRow.style.opacity='1';
+    document.querySelectorAll('#dye-swatches .swatch').forEach(function(s,i){s.classList.toggle('active',i===3);});
+    document.querySelectorAll('#particle-swatches .swatch').forEach(function(s,i){s.classList.toggle('active',i===1);});
+  });
+
+})();
+</script>
+</body>
+</html>
